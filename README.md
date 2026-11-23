@@ -56,23 +56,87 @@ api.zeronetwork.test  ->  10.7.21.230
 
 # 4. Final Architecture
 
-```text
-                     MAC-4 (client, 10.7.23.141)
-                        |  1. DNS query  (UDP 53)
-                        v
-          MAC-1 primary DNS 10.7.8.17   (fallback: MAC-3 backup DNS 10.7.25.53)
-                        |  answer: 10.7.21.230
-                        |  2. TCP + TLS  (443)
-                        v
-            MAC-2 edge nginx 10.7.21.230      (standby edge: MAC-3)
-                 |  3. HTTP, plaintext, X-Forwarded-For
-        +--------+---------+
-        v                  v
-  MAC-3 Backend A     MAC-4 Backend B
-   10.7.25.53:3001     10.7.23.141:3002
+> Full diagram set (including Phase 2 failover, isolation, cutover and troubleshooting): [`docs/diagrams/README.md`](docs/diagrams/README.md)
+
+## 4.1 Network topology
+
+```mermaid
+flowchart TB
+    subgraph LAN["Private Wi-Fi LAN · 10.7.0.0/19 · gateway 10.7.0.1"]
+        direction TB
+        C["💻 MAC-4 · Client<br/>Shyam Verma<br/>10.7.23.141"]
+        DNS1["🧭 MAC-1 · Primary DNS<br/>Yash Agarwal<br/>10.7.8.17 · dnsmasq :53"]
+        DNS2["🧭 MAC-3 · Backup DNS<br/>Swati Ghosh<br/>10.7.25.53 · dnsmasq :53"]
+        EDGE["🔒 MAC-2 · Edge<br/>Vansh Sharma<br/>10.7.21.230 · nginx :443<br/>TLS termination + round robin"]
+        A["⚙️ MAC-3 · Backend A<br/>10.7.25.53:3001"]
+        B["⚙️ MAC-4 · Backend B<br/>10.7.23.141:3002"]
+    end
+
+    C -- "1 · DNS query UDP 53" --> DNS1
+    C -. "fallback UDP 53" .-> DNS2
+    C == "2 · HTTPS TCP 443" ==> EDGE
+    EDGE -- "3 · HTTP 3001" --> A
+    EDGE -- "3 · HTTP 3002" --> B
+
+    classDef client fill:#e8f1ff,stroke:#2f6fdb,color:#0b2a5b
+    classDef dns fill:#fff4e0,stroke:#d98a00,color:#5a3a00
+    classDef edge fill:#e9f9ee,stroke:#1f9d55,color:#0c3d22
+    classDef be fill:#f3ecff,stroke:#7b4fd6,color:#2e1a5c
+    class C client
+    class DNS1,DNS2 dns
+    class EDGE edge
+    class A,B be
 ```
 
-Only the edge knows where the backends are. In Phase 2 a firewall also makes the edge the only host allowed to reach ports 3001 and 3002.
+Only the edge knows where the backends are. In Phase 2 a `pf` firewall makes the edge the only host allowed to reach ports 3001 and 3002.
+
+## 4.2 End-to-end request flow
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant C as MAC-4 Client
+    participant D as MAC-1 DNS
+    participant E as MAC-2 Edge (nginx)
+    participant A as MAC-3 Backend A
+    participant B as MAC-4 Backend B
+
+    C->>D: DNS query A app.zeronetwork.test (UDP 53)
+    D-->>C: 10.7.21.230, TTL 30
+    C->>E: TCP SYN :443
+    E-->>C: SYN-ACK
+    C->>E: ACK
+    C->>E: TLS ClientHello (SNI app.zeronetwork.test, ALPN h2)
+    E-->>C: ServerHello, Certificate (ZeroNetwork Local Root CA), Finished
+    C->>E: Finished, then GET /api/status over HTTP/2 (encrypted)
+    alt round robin → A
+        E->>A: GET /api/status (HTTP/1.1, X-Forwarded-For 10.7.23.141)
+        A-->>E: 200 X-Backend A
+    else round robin → B
+        E->>B: GET /api/status (HTTP/1.1, X-Forwarded-For 10.7.23.141)
+        B-->>E: 200 X-Backend B
+    end
+    E-->>C: 200 + X-Backend, X-Edge, Cache-Control, ETag
+```
+
+## 4.3 Protocol layers per leg
+
+```mermaid
+flowchart LR
+    subgraph L1["Client → Edge (port 443)"]
+        direction TB
+        h2["HTTP/2"] --> tls["TLS 1.3 / 1.2"] --> tcp1["TCP"] --> ip1["IPv4"] --> wifi1["Wi-Fi 802.11"]
+    end
+    subgraph L2["Edge → Backend (3001 / 3002)"]
+        direction TB
+        h1["HTTP/1.1 plaintext"] --> tcp2["TCP"] --> ip2["IPv4"] --> wifi2["Wi-Fi 802.11"]
+    end
+    subgraph L0["Client → DNS (port 53)"]
+        direction TB
+        dns["DNS"] --> udp["UDP"] --> ip0["IPv4"] --> wifi0["Wi-Fi 802.11"]
+    end
+    L1 -- "TLS terminates at nginx" --> L2
+```
 
 ### One request, layer by layer
 
@@ -102,6 +166,7 @@ edge/                      nginx reverse proxy / load balancer / TLS config
 tls/                       OpenSSL configs for the local CA and server certificate
 tests/                     Verification scripts (DNS, HTTPS, load balancing, caching, failure, failover)
 docs/                      Runbook, setup guide, topology, architecture, troubleshooting
+docs/diagrams/             All architecture diagrams (Mermaid)
 phase2/                    Extensions A–F: configs, docs, evidence summary
 evidence/                  Screenshots organised by task (see evidence/EVIDENCE_INDEX.md)
 DELIVERABLES.md            Section 9 deliverables index, marks map, demo sequence
@@ -126,6 +191,29 @@ Full ordered commands for every Mac: [`docs/runbook.md`](docs/runbook.md). Conde
 ---
 
 # 8. Phase 2 Extensions
+
+```mermaid
+flowchart TB
+    C["💻 Client MAC-4<br/>resolvers: 10.7.8.17, 10.7.25.53"]
+    subgraph DNSL["Ext A + B · DNS resilience · TTL 30"]
+        D1["MAC-1 Primary DNS<br/>10.7.8.17"]
+        D2["MAC-3 Backup DNS<br/>10.7.25.53"]
+    end
+    subgraph EDGEL["Ext E · Edge migration"]
+        E1["MAC-2 Primary edge<br/>10.7.21.230 :443"]
+        E2["MAC-3 Standby edge<br/>10.7.25.53 :443"]
+    end
+    subgraph BEL["Ext C · pf: only edges may connect · Ext D · failover"]
+        A["MAC-3 Backend A :3001"]
+        B["MAC-4 Backend B :3002"]
+    end
+    C --> D1
+    C -.->|fallback| D2
+    C ==>|"app → 10.7.21.230 (normal)"| E1
+    C -.->|"app → 10.7.25.53 (after cutover)"| E2
+    E1 --> A & B
+    E2 --> A & B
+```
 
 | Ext | What | Result |
 |---|---|---|

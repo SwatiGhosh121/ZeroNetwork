@@ -9,3 +9,7 @@ See the diagram and layer table in the main [README](../README.md#4-final-archit
 - **Isolation (Phase 2):** `pf` rules allow only 10.7.21.230 to reach 3001/3002.
 - **Failover (Phase 2):** passive health checks, `max_fails=1 fail_timeout=10s`, plus `proxy_next_upstream`.
 - **Edge migration (Phase 2):** changing the DNS record moves clients to the standby edge on MAC-3.
+
+## Diagrams
+
+All diagrams (topology, request flow, TLS, caching, Phase 2): [`diagrams/README.md`](diagrams/README.md).
