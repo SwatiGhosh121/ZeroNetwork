@@ -10,7 +10,7 @@
 | **Evidence Folder** (dig, curl headers, Wireshark DNS/TCP/TLS, caching, all failure scenarios) | Phase 1 + Phase 2 | [`evidence/`](evidence), index in [`evidence/EVIDENCE_INDEX.md`](evidence/EVIDENCE_INDEX.md) |
 | **Phase 1 Checkpoint** (live system, structured demo, every member can explain any component) | Phase 1 review | [`docs/runbook.md`](docs/runbook.md), [`tests/run-all-tests.sh`](tests/run-all-tests.sh), [`documentation/presentation-qa.md`](documentation/presentation-qa.md) |
 | **Phase 2 Final Report** (what changed, resilience results, troubleshooting findings, learning summary) | Phase 2 review | [`phase2/docs/phase2-final-report.md`](phase2/docs/phase2-final-report.md) |
-| **Final Presentation** (live demo in the Section 8 sequence, viva for every member) | Final evaluation | [`documentation/presentation-qa.md`](documentation/presentation-qa.md), script in [`documentation/video-script.md`](documentation/video-script.md), [Videos on Google Drive](https://drive.google.com/drive/search?q=CN) |
+| **Final Presentation** (live demo in the Section 8 sequence, viva for every member) | Final evaluation | [`docs/demo-runbook.md`](docs/demo-runbook.md), [`documentation/presentation-qa.md`](documentation/presentation-qa.md), script in [`documentation/video-script.md`](documentation/video-script.md), [Videos on Google Drive](https://drive.google.com/drive/search?q=CN) |
 
 # Marks Breakdown → Evidence Map (Section 10)
 
@@ -36,6 +36,8 @@
 | Individual Viva Phase 2 + Full System | 10 | `documentation/presentation-qa.md` |
 
 # Section 8 Demo Sequence → Where to Show It
+
+Step-by-step commands, speakers and rollbacks: **[`docs/demo-runbook.md`](docs/demo-runbook.md)**.
 
 | Step | Show | Command / file |
 |---|---|---|

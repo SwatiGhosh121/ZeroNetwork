@@ -167,6 +167,7 @@ tls/                       OpenSSL configs for the local CA and server certifica
 tests/                     Verification scripts (DNS, HTTPS, load balancing, caching, failure, failover)
 docs/                      Runbook, setup guide, topology, architecture, troubleshooting
 docs/diagrams/             All architecture diagrams (Mermaid)
+docs/demo-runbook.md       Final demonstration runbook (11 steps, who runs what)
 phase2/                    Extensions A–F: configs, docs, evidence summary
 evidence/                  Screenshots organised by task (see evidence/EVIDENCE_INDEX.md)
 DELIVERABLES.md            Section 9 deliverables index, marks map, demo sequence
@@ -186,7 +187,7 @@ python3 backend-b/server.py B 3002
 bash tests/run-all-tests.sh
 ```
 
-Full ordered commands for every Mac: [`docs/runbook.md`](docs/runbook.md). Condensed guide: [`docs/setup-guide.md`](docs/setup-guide.md).
+Full ordered commands for every Mac: [`docs/runbook.md`](docs/runbook.md). **Final 11-step demo:** [`docs/demo-runbook.md`](docs/demo-runbook.md). Condensed guide: [`docs/setup-guide.md`](docs/setup-guide.md).
 
 ---
 

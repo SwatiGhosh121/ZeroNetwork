@@ -1,7 +1,7 @@
 # TLS: local CA + server certificate
 
 ```bash
-cd ~/zeronetwork-certs
+cd ~/zeronetwork/tls
 openssl genrsa -out ZeroNetworkCA.key 4096
 openssl req -x509 -new -key ZeroNetworkCA.key -sha256 -days 825 -config ca.cnf -out ZeroNetworkCA.crt
 openssl genrsa -out zeronetwork.key 2048
