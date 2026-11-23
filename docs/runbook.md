@@ -651,7 +651,7 @@ scutil --dns | grep -m3 nameserver
 ```
 📸 on MAC-4: `snap P2-A4_two_resolvers`
 
-**A5 ▶ RUN ON: MAC-1** — **stop the primary DNS**: press **Ctrl+C** in the MAC-1 DNS window. 📸 `snap P2-A5_primary_stopped`
+**A5 ▶ RUN ON: MAC-1** — **stop the primary DNS**: press **Ctrl+C** in the MAC-1 DNS window (or run: `sudo pkill -9 dnsmasq`). 📸 `snap P2-A5_primary_stopped`
 
 **A6 ▶ RUN ON: MAC-4** — clients keep resolving through the backup
 ```bash
