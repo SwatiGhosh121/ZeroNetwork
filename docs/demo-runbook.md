@@ -300,3 +300,29 @@ Each member must explain any part from understanding, not notes. Prepare with [`
 ▶ **ALL:** `sudo networksetup -setdnsservers Wi-Fi empty; zn_flush`
 ▶ **MAC-1, MAC-3:** Ctrl+C in DNS windows · **MAC-3, MAC-4:** Ctrl+C in BACKEND windows
 ▶ **MAC-2 (and MAC-3):** `nginx -s stop` · **MAC-3, MAC-4:** `sudo pfctl -f /etc/pf.conf`
+
+
+
+Check DNS
+
+dig app.zeronetwork.test +short
+
+If empty or wrong IP: The fault is in DNS! (Wrong record or dnsmasq is stopped).
+
+Check TCP port
+
+nc -vz 10.7.21.230 443
+
+If Connection Refused or Timeout: The fault is in Nginx / Network / Firewall!
+
+Check TLS / Certificate
+
+openssl s_client -connect 10.7.21.230:443 -servername app.zeronetwork.test
+
+If verify error: The certificate or Root CA is broken!
+
+Check Application / HTTP
+
+curl -i https://app.zeronetwork.test/api/status
+
+If 502 Bad Gateway: The backends (ports 3001/3002) are down!
