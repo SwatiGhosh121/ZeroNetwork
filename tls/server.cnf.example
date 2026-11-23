@@ -1,0 +1,16 @@
+[ req ]
+distinguished_name = dn
+prompt             = no
+
+[ dn ]
+C  = IN
+O  = ZeroNetwork
+CN = app.zeronetwork.test
+
+[ v3_server ]
+basicConstraints       = critical, CA:FALSE
+keyUsage               = critical, digitalSignature, keyEncipherment
+extendedKeyUsage       = serverAuth
+subjectAltName         = DNS:app.zeronetwork.test, DNS:api.zeronetwork.test
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid, issuer

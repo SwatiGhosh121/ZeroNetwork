@@ -1,430 +1,171 @@
-# Computer Networks Phase 1
-## Multi-Machine Reverse Proxy and Load Balancing System
+# ZeroNetwork — Private Network Service Platform
 
-A Computer Networks project demonstrating a multi-machine client-server architecture using four macOS systems, Node.js, Express.js, and Nginx.
+## Computer Networks Course Project — Phase 1 (Build & Observe) and Phase 2 (Harden & Recover)
 
-The project implements two backend servers behind an Nginx reverse proxy and demonstrates HTTP request routing, round-robin load balancing, backend identification, and backend failure behavior.
+> **Core principle:** *"The application stays simple; the network is the project."*
 
 ---
 
-## Team Information
+# 1. Project Purpose & Overview
 
-**Team Name:** ZeroNetwork 
-**Section:** E
+ZeroNetwork is a private service platform on four macOS workstations on one local network, with no cloud. It follows one client request through every layer:
 
-| Student Name | Enrollment Number |
+1. A client opens `https://app.zeronetwork.test`.
+2. MAC-1 resolves the name with `dnsmasq` (TTL 30 s).
+3. The client opens a TCP connection and a TLS session to the edge on MAC-2, port 443.
+4. nginx terminates TLS and round-robins across Backend A and Backend B.
+5. The backend answers with `X-Backend`, `Cache-Control` and `ETag` headers.
+6. Every layer is observed with `dig`, `nc`, `openssl`, `curl -v` and Wireshark.
+
+The project uses the reserved `.test` namespace, so it can never clash with a real domain.
+
+---
+
+# 2. Team Organization & Machine Roles
+
+| Machine | Team Member | Primary Role | Main Service | Port |
+|---|---|---|---|---:|
+| **MAC-1** | **Yash Agarwal** | Private DNS (primary) + client | `dnsmasq` | `53` |
+| **MAC-2** | **Vansh Sharma** | Edge: TLS termination, reverse proxy, round-robin load balancer | `nginx` | `443` |
+| **MAC-3** | **Swati Ghosh** | Backend A. Phase 2: backup DNS + standby edge | Python HTTP service | `3001` |
+| **MAC-4** | **Shyam Verma** | Backend B + main test client + Wireshark capture | Python HTTP service | `3002` |
+
+Team name: **ZeroNetwork**.
+
+---
+
+# 3. Final Network Inventory
+
+| Machine | IP | Interface |
+|---|---|---|
+| MAC-1 | `10.7.8.17` | `en0` (Wi-Fi) |
+| MAC-2 | `10.7.21.230` | `en0` |
+| MAC-3 | `10.7.25.53` | `en0` |
+| MAC-4 | `10.7.23.141` | `en0` |
+
+Subnet `10.7.0.0/19` (mask `255.255.224.0`), gateway `10.7.0.1`.
+
+Private records (TTL 30 s):
+
+```text
+app.zeronetwork.test  ->  10.7.21.230
+api.zeronetwork.test  ->  10.7.21.230
+```
+
+---
+
+# 4. Final Architecture
+
+```text
+                     MAC-4 (client, 10.7.23.141)
+                        |  1. DNS query  (UDP 53)
+                        v
+          MAC-1 primary DNS 10.7.8.17   (fallback: MAC-3 backup DNS 10.7.25.53)
+                        |  answer: 10.7.21.230
+                        |  2. TCP + TLS  (443)
+                        v
+            MAC-2 edge nginx 10.7.21.230      (standby edge: MAC-3)
+                 |  3. HTTP, plaintext, X-Forwarded-For
+        +--------+---------+
+        v                  v
+  MAC-3 Backend A     MAC-4 Backend B
+   10.7.25.53:3001     10.7.23.141:3002
+```
+
+Only the edge knows where the backends are. In Phase 2 a firewall also makes the edge the only host allowed to reach ports 3001 and 3002.
+
+### One request, layer by layer
+
+| # | Layer | From → to | Port | What happens |
+|---|---|---|---:|---|
+| 1 | DNS (UDP) | MAC-4 → MAC-1 | 53 | `app.zeronetwork.test` → `10.7.21.230`, TTL 30 |
+| 2 | TCP | MAC-4 → MAC-2 | 443 | SYN, SYN-ACK, ACK |
+| 3 | TLS | MAC-4 ↔ MAC-2 | 443 | ClientHello (SNI) → ServerHello → Certificate → Finished |
+| 4 | HTTP/2, encrypted | MAC-4 → MAC-2 | 443 | `GET /api/status`, unreadable on the wire |
+| 5 | HTTP/1.1, plaintext | MAC-2 → MAC-3 / MAC-4 | 3001 / 3002 | Round robin + `X-Forwarded-For` |
+| 6 | Response | backend → edge → client | | `X-Backend`, `X-Edge`, `Cache-Control`, `ETag` |
+
+---
+
+# 5. Deliverables
+
+Everything the project document asks for is indexed, with the marks mapping and demo sequence, in **[`DELIVERABLES.md`](DELIVERABLES.md)**.
+
+---
+
+# 6. Repository Structure
+
+```text
+backend-a/, backend-b/     REST backend (Python standard library only)
+dns/                       dnsmasq config + A records
+edge/                      nginx reverse proxy / load balancer / TLS config
+tls/                       OpenSSL configs for the local CA and server certificate
+tests/                     Verification scripts (DNS, HTTPS, load balancing, caching, failure, failover)
+docs/                      Runbook, setup guide, topology, architecture, troubleshooting
+phase2/                    Extensions A–F: configs, docs, evidence summary
+evidence/                  Screenshots organised by task (see evidence/EVIDENCE_INDEX.md)
+DELIVERABLES.md            Section 9 deliverables index, marks map, demo sequence
+documentation/             Presentation Q&A, video script, project videos
+```
+
+---
+
+# 7. Quick Start
+
+```bash
+# MAC-3
+python3 backend-a/server.py A 3001
+# MAC-4
+python3 backend-b/server.py B 3002
+# Any client Mac, after DNS and the CA are set up (see docs/setup-guide.md)
+bash tests/run-all-tests.sh
+```
+
+Full ordered commands for every Mac: [`docs/runbook.md`](docs/runbook.md). Condensed guide: [`docs/setup-guide.md`](docs/setup-guide.md).
+
+---
+
+# 8. Phase 2 Extensions
+
+| Ext | What | Result |
+|---|---|---|
+| A | Backup DNS on MAC-3 | Both resolvers answer; client lists both |
+| B | TTL 30 s | A record change reaches clients within one TTL, or at once after a cache flush |
+| C | Backend isolation with `pf` | Direct client access times out (exit 28); the edge still works; rollback restores access |
+| D | Health-checked failover | Backend A stopped mid-stream: 0 failed requests, retried on B |
+| E | DNS-based edge migration | Traffic moved from MAC-2 to the standby on MAC-3 in 3 s, with no failed request |
+| F | Layered troubleshooting method | DNS → TCP → TLS → HTTP; the first failing layer is the fault |
+
+Details: [`phase2/docs/phase2-final-report.md`](phase2/docs/phase2-final-report.md).
+
+---
+
+# 9. Evidence
+
+Every screenshot's prompt shows `[ZeroNetwork | MAC-X | IP] time`. Index: [`evidence/EVIDENCE_INDEX.md`](evidence/EVIDENCE_INDEX.md).
+
+| Task | Folder |
 |---|---|
-| Yash Agarwal | 2401010511 |
-| Vansh Sharma | 2401010495 |
-| Shyam Verma | 2401010453 |
-| Swati Ghosh | 2401010471 |
+| A: LAN + connectivity | `evidence/task-a/` |
+| B: Private DNS | `evidence/task-b/` |
+| C: Backends | `evidence/task-c/` |
+| D: Load balancing | `evidence/task-d/` |
+| E: HTTPS / TLS | `evidence/task-e/` |
+| F: HTTP caching (304) | `evidence/task-f/` |
+| G: Wireshark | `evidence/task-g/` |
+| Failure scenarios | `evidence/failures/` |
+| Phase 2 | `evidence/phase2/` |
 
 ---
 
-## Project Overview
+# 10. Presentation & Video
 
-The objective of this project is to understand how requests travel through a network and how reverse proxies and load balancers distribute traffic between multiple backend servers.
-
-The system uses four separate Mac machines, each assigned a specific networking role.
-
-The client sends HTTP requests to the Nginx server running on Mac 2. Nginx forwards requests to either Backend A on Mac 3 or Backend B on Mac 4.
-
-Each backend exposes a basic HTTP endpoint and a status API to identify which server handled the request.
-
-## Architecture
-
-```text
-                 Client
-              (Mac 1 / Mac 4)
-                    |
-                    | HTTP Request
-                    |
-                    v
-          Mac 2 — Nginx Server
-             Reverse Proxy
-             Port: 8080
-                    |
-             Load Balancer
-                    |
-           +--------+--------+
-           |                 |
-           v                 v
-     Mac 3 — Backend A  Mac 4 — Backend B
-        Port 3001          Port 3002
-           |                 |
-           v                 v
-       Express.js        Express.js
-           |                 |
-           +--------+--------+
-                    |
-              HTTP Response
-```
-
-## Machine Configuration
-
-| Machine | Role | Technology | Port |
-|---|---|---|---|
-| Mac 1 | Client / initial DNS setup role | macOS, curl | — |
-| Mac 2 | Reverse Proxy and Load Balancer | Nginx | 8080 |
-| Mac 3 | Backend Server A | Node.js, Express.js | 3001 |
-| Mac 4 | Backend Server B | Node.js, Express.js | 3002 |
-
-### Network Addresses
-
-The actual LAN IP addresses should be recorded from the machines used during the demonstration.
-
-| Machine | IP Address |
-|---|---|
-| Mac 1 | 10.7.5.166 |
-| Mac 2 | 10.7.3.101 |
-| Mac 3 | 10.7.6.207 |
-| Mac 4 | 10.7.7.217 |
+- **Project Demonstration & Presentation Videos:** [Google Drive Link](https://drive.google.com/drive/search?q=CN)
+- 15-slide final presentation; likely questions and answers per slide: [`documentation/presentation-qa.md`](documentation/presentation-qa.md)
+- Narrated project video script: [`documentation/video-script.md`](documentation/video-script.md)
 
 ---
 
-## Technologies Used
+# 11. Security Note
 
-- macOS
-- Node.js
-- Express.js
-- Nginx
-- HTTP
-- TCP/IP
-- cURL
-- Homebrew
-
----
-
-## Implemented Features
-
-### 1. Backend Server A
-
-Backend A runs on Mac 3 using Express.js on port `3001`.
-
-**Endpoint:**
-
-```http
-GET /
-```
-
-Response:
-
-```text
-Hello from Backend A
-```
-
-Status endpoint:
-
-```http
-GET /api/status
-```
-
-Response:
-
-```json
-{
-  "backend": "A",
-  "status": "healthy"
-}
-```
-
-Response identification header:
-
-```http
-X-Backend: A
-```
-
-### 2. Backend Server B
-
-Backend B runs on Mac 4 using Express.js on port `3002`.
-
-**Endpoint:**
-
-```http
-GET /
-```
-
-Response:
-
-```text
-Hello from Backend B
-```
-
-Status endpoint:
-
-```http
-GET /api/status
-```
-
-Response:
-
-```json
-{
-  "backend": "B",
-  "status": "healthy"
-}
-```
-
-Response identification header:
-
-```http
-X-Backend: B
-```
-
-### 3. Nginx Reverse Proxy
-
-Nginx is configured on Mac 2 and listens on port `8080`.
-
-It forwards incoming HTTP requests to the configured backend servers.
-
-The upstream configuration uses:
-
-- Backend A: Mac 3, port 3001
-- Backend B: Mac 4, port 3002
-
-### 4. Round-Robin Load Balancing
-
-Nginx distributes requests across the two configured backend servers using its default round-robin upstream behavior.
-
-The `X-Backend` response header allows us to identify which backend served each request.
-
-### 5. Backend Status Verification
-
-The `/api/status` endpoint provides a JSON response identifying the backend and its application status.
-
-This allows the team to verify request routing through Nginx.
-
-### 6. Backend Failure Demonstration
-
-The failure-testing scenario involves stopping Backend A and sending requests through Nginx.
-
-With the current basic upstream configuration, requests routed to the unavailable backend may return an HTTP `502 Bad Gateway` response, while requests routed to Backend B can still succeed.
-
-This demonstrates the importance of backend availability and the limitations of basic load balancing without additional health-check and recovery mechanisms.
-
-**Note:** The failure scenario should be marked as demonstrated only after recording the actual test output.
-
----
-
-## Project Setup
-
-### Prerequisites
-
-Install the following on the relevant machines:
-
-- Node.js
-- npm
-- Nginx
-- Homebrew
-
-### Backend A Setup — Mac 3
-
-```bash
-mkdir backend-a
-cd backend-a
-npm init -y
-npm install express
-```
-
-Create `server.js` and configure the Express application to:
-
-- Listen on port `3001`
-- Bind to `0.0.0.0`
-- Serve `/`
-- Serve `/api/status`
-- Return `X-Backend: A`
-
-Start the application:
-
-```bash
-node server.js
-```
-
-### Backend B Setup — Mac 4
-
-```bash
-mkdir backend-b
-cd backend-b
-npm init -y
-npm install express
-```
-
-Configure the Express application to:
-
-- Listen on port `3002`
-- Bind to `0.0.0.0`
-- Serve `/`
-- Serve `/api/status`
-- Return `X-Backend: B`
-
-Start the application:
-
-```bash
-node server.js
-```
-
-### Nginx Setup — Mac 2
-
-Install Nginx:
-
-```bash
-brew install nginx
-```
-
-Check the installation:
-
-```bash
-nginx -v
-```
-
-Find the configuration file:
-
-```bash
-nginx -V 2>&1 | grep -- --conf-path
-```
-
-On the configured Mac 2 environment, the configuration path was:
-
-```text
-/opt/homebrew/etc/nginx/nginx.conf
-```
-
-The Nginx configuration uses an upstream named `backend_servers`, with the actual LAN addresses of Mac 3 and Mac 4 and their respective ports.
-
-The server listens on port `8080` and proxies requests to the upstream.
-
-Validate the configuration:
-
-```bash
-nginx -t
-```
-
-Start Nginx:
-
-```bash
-nginx
-```
-
----
-
-## Testing and Verification
-
-### Test Backend A
-
-```bash
-curl http://localhost:3001/
-```
-
-```bash
-curl http://localhost:3001/api/status
-```
-
-### Test Backend B
-
-```bash
-curl http://localhost:3002/
-```
-
-```bash
-curl http://localhost:3002/api/status
-```
-
-### Test Nginx Locally
-
-On Mac 2:
-
-```bash
-curl -i http://localhost:8080/
-```
-
-Repeat the request to observe backend identification.
-
-### Test from a Client Machine
-
-```bash
-curl -i http://MAC2_IP:8080/
-```
-
-Replace `MAC2_IP` with the actual LAN IP address of Mac 2.
-
-### Test the Status API Through Nginx
-
-```bash
-curl http://MAC2_IP:8080/api/status
-```
-
-The expected backend identifiers are:
-
-```json
-{"backend":"A","status":"healthy"}
-```
-
-```json
-{"backend":"B","status":"healthy"}
-```
-
-### Verify Listening Ports
-
-Backend A:
-
-```bash
-lsof -nP -iTCP:3001 -sTCP:LISTEN
-```
-
-Backend B:
-
-```bash
-lsof -nP -iTCP:3002 -sTCP:LISTEN
-```
-
----
-
-## Networking Concepts Demonstrated
-
-- Client-server communication
-- TCP/IP networking
-- HTTP request-response cycle
-- Reverse proxy
-- Load balancing
-- Round-robin request distribution
-- Backend service identification
-- Port-based communication
-- Multi-machine LAN communication
-- Backend availability and failure behavior
-
----
-
-## Current Scope and Limitations
-
-This repository documents the current Phase 1 implementation.
-
-The following features are **not claimed as completed**:
-
-- HTTPS/TLS termination
-- Private DNS resolution using the custom project domain
-- HTTP caching and cache validation
-- Automated backend health checks
-- Automatic failover or recovery
-
-These features may be considered for subsequent project development after implementation and verification.
-
----
-
-## Future Scope
-
-- Configure private DNS and verify domain resolution.
-- Implement HTTPS/TLS termination on Nginx.
-- Configure and verify HTTP cache headers.
-- Investigate backend health checks and recovery behavior.
-- Capture network traffic using Wireshark or tcpdump.
-- Collect additional evidence of request routing and failure behavior.
-
----
-
-## Conclusion
-
-The project establishes a multi-machine networking environment in which Nginx acts as a reverse proxy and distributes HTTP requests between two independent Express.js backend services.
-
-It provides a practical demonstration of request forwarding, load balancing, backend identification, and the effect of backend unavailability.
-
-The implementation helps connect core Computer Networks concepts with a real distributed service architecture.
+Private keys (`*.key`) and certificates are not committed. Generate them with the commands in [`tls/README.md`](tls/README.md).

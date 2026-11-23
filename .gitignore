@@ -1,0 +1,11 @@
+.DS_Store
+*.key
+*.pem
+*.crt
+*.csr
+*.srl
+*.log
+.env
+__pycache__/
+*.pyc
+*.mp4

@@ -1,0 +1,15 @@
+[ req ]
+distinguished_name = dn
+prompt             = no
+x509_extensions    = v3_ca
+
+[ dn ]
+C  = IN
+O  = ZeroNetwork
+CN = ZeroNetwork Local Root CA
+
+[ v3_ca ]
+basicConstraints       = critical, CA:TRUE
+keyUsage               = critical, keyCertSign, cRLSign
+subjectKeyIdentifier   = hash
+authorityKeyIdentifier = keyid:always, issuer
